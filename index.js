@@ -10,12 +10,12 @@ const FormData = require('form-data');
 require('dotenv').config();
 
 // --- Bloque de configuración (sin cambios) ---
-const { 
-    GOOGLE_SHEET_ID, 
-    GOOGLE_CREDENTIALS_JSON, 
-    TELEGRAM_BOT_TOKEN, 
+const {
+    GOOGLE_SHEET_ID,
+    GOOGLE_CREDENTIALS_JSON,
+    TELEGRAM_BOT_TOKEN,
     TELEGRAM_CHAT_ID,
-    GEMINI_API_KEY   
+    GEMINI_API_KEY
 } = process.env;
 
 if (!GOOGLE_SHEET_ID || !GOOGLE_CREDENTIALS_JSON || !TELEGRAM_BOT_TOKEN || !TELEGRAM_CHAT_ID || !GEMINI_API_KEY) {
@@ -41,26 +41,26 @@ const port = process.env.PORT || 4000;
 
 // Lista de los orígenes (dominios) que tienen permiso para hacer peticiones a tu backend.
 const allowedOrigins = [
-  'https://event-hub-frontend-gamma.vercel.app', // Tu dominio de producción en Vercel
-  'http://localhost:3000',                      // Para pruebas locales (si usas create-react-app)
-  'http://localhost:5173',
-  'https://event-hub-frontend-git-master-brandon-gonsales-projects.vercel.app',
-  'https://event-hub-frontend-git-develop-brandon-gonsales-projects.vercel.app'                      // Para pruebas locales (si usas Vite)
+    'https://event-hub-frontend-gamma.vercel.app', // Tu dominio de producción en Vercel
+    'http://localhost:3000',                      // Para pruebas locales (si usas create-react-app)
+    'http://localhost:5173',
+    'https://event-hub-frontend-git-master-brandon-gonsales-projects.vercel.app',
+    'https://event-hub-frontend-git-develop-brandon-gonsales-projects.vercel.app'                      // Para pruebas locales (si usas Vite)
 ];
 //prueba
 app.use(cors({
-  origin: function (origin, callback) {
-    // Si la petición no tiene un 'origin' (ej. una app móvil o Postman), la permitimos.
-    if (!origin) return callback(null, true);
-    
-    // Si el 'origin' de la petición está en nuestra lista de dominios permitidos, la permitimos.
-    if (allowedOrigins.indexOf(origin) === -1) {
-      const msg = 'La política de CORS para este sitio no permite el acceso desde el origen especificado.';
-      return callback(new Error(msg), false);
+    origin: function (origin, callback) {
+        // Si la petición no tiene un 'origin' (ej. una app móvil o Postman), la permitimos.
+        if (!origin) return callback(null, true);
+
+        // Si el 'origin' de la petición está en nuestra lista de dominios permitidos, la permitimos.
+        if (allowedOrigins.indexOf(origin) === -1) {
+            const msg = 'La política de CORS para este sitio no permite el acceso desde el origen especificado.';
+            return callback(new Error(msg), false);
+        }
+
+        return callback(null, true);
     }
-    
-    return callback(null, true);
-  }
 }));
 
 // --- FIN DEL CAMBIO ---
@@ -111,7 +111,7 @@ async function getExistingPrimePairs() {
             spreadsheetId: GOOGLE_SHEET_ID,
             // ¡IMPORTANTE! Asume que los primos están en las columnas K y L.
             // Si cambias las columnas, debes actualizar este rango.
-            range: 'Respuestas!H:I', 
+            range: 'Respuestas!H:I',
         });
 
         const rows = response.data.values;
@@ -148,8 +148,8 @@ async function extractDataWithGemini(imageBuffer) {
         const genAI = new GoogleGenerativeAI(GEMINI_API_KEY);
         const model = genAI.getGenerativeModel({ model: "gemini-2.5-pro" });
         const imagePart = { inlineData: { data: imageBuffer.toString("base64"), mimeType: "image/jpeg" } };
-        const prompt = 
-        `
+        const prompt =
+            `
 Eres un sistema experto de extracción de datos de comprobantes de pago de Bolivia. Tu tarea es analizar una imagen de un comprobante y extraer la siguiente información en un formato JSON estricto.
 
 Extrae los siguientes campos:
@@ -162,7 +162,7 @@ Reglas Adicionales:
 - Si un campo no se puede encontrar en la imagen, usa el valor de string "No encontrado".
 - Tu respuesta debe ser únicamente el objeto JSON, sin explicaciones ni texto adicional.
 `
-;
+            ;
         const result = await model.generateContent([prompt, imagePart]);
         const response = await result.response;
         const text = response.text();
@@ -178,14 +178,44 @@ Reglas Adicionales:
 app.post('/api/submit', upload.single('proof'), async (req, res) => {
     try {
         console.log('Datos recibidos en req.body:', req.body);
-        
+
         // --- 1. EXTRACCIÓN Y ESTRUCTURACIÓN DE DATOS ---
-        const {
+        let {
             buyer,
             totalAmount,
             paymentMethod,
             attendees
         } = req.body;
+
+        // --- CORRECCIÓN DE DATOS: Soporte para FormData (strings) y Estructura Plana ---
+
+        // 1. Si vienen como strings (común en FormData), intentamos parsearlos a JSON
+        if (typeof buyer === 'string') {
+            try { buyer = JSON.parse(buyer); } catch (e) { console.log('Error parseando buyer:', e); }
+        }
+        if (typeof attendees === 'string') {
+            try { attendees = JSON.parse(attendees); } catch (e) { console.log('Error parseando attendees:', e); }
+        }
+
+        // 2. Fallback: Si no hay objeto 'buyer' ni array 'attendees', pero hay campos planos (name, email...)
+        // Esto soluciona el error "attendees is not iterable" cuando el frontend envía campos sueltos.
+        if ((!attendees || !Array.isArray(attendees) || attendees.length === 0) && req.body.name) {
+            console.log("Detectada estructura plana. Convirtiendo a estructura de objetos...");
+            buyer = {
+                name: req.body.name,
+                email: req.body.email || '',
+                phone: req.body.phone || ''
+            };
+            attendees = [{
+                fullName: req.body.name,
+                phone: req.body.phone || '',
+                email: req.body.email || ''
+            }];
+        }
+
+        // Inicialización por defecto para evitar crashes si todo falla
+        if (!attendees) attendees = [];
+        if (!buyer) buyer = { name: 'Desconocido', email: '', phone: '' };
 
         // --- 2. OPERACIONES ÚNICAS (SE HACEN UNA SOLA VEZ POR PETICIÓN) ---
         const file = req.file;
@@ -196,10 +226,10 @@ app.post('/api/submit', upload.single('proof'), async (req, res) => {
 
         const existingPairs = await getExistingPrimePairs();
         const allNewRows = [];
-        
+
         // ***** INICIO DE LA CORRECCIÓN #1 *****
         // Se declara el array para guardar la info para Telegram
-        const registeredAttendeesInfo = []; 
+        const registeredAttendeesInfo = [];
         // ***** FIN DE LA CORRECCIÓN #1 *****
 
         // --- 3. BUCLE PRINCIPAL PARA GENERAR UNA FILA POR CADA ASISTENTE ---
@@ -215,7 +245,7 @@ app.post('/api/submit', upload.single('proof'), async (req, res) => {
                 pairKey = `${sortedPair[0]}-${sortedPair[1]}`;
                 attempts++;
             } while (primeA === primeB || existingPairs.has(pairKey));
-            
+
             existingPairs.add(pairKey);
             const productC = primeA * primeB;
             console.log(`Fila para '${attendee.fullName}': Par único ${pairKey} encontrado en ${attempts} intento(s).`);
@@ -243,7 +273,7 @@ app.post('/api/submit', upload.single('proof'), async (req, res) => {
             ];
 
             allNewRows.push(newRow);
-            
+
             /* S - Prueba */
 
             // ***** INICIO DE LA CORRECCIÓN #2 *****
