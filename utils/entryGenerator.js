@@ -1,4 +1,4 @@
-const { createCanvas, registerFont } = require('canvas');
+const { createCanvas, loadImage } = require('canvas');
 const QRCode = require('qrcode');
 const cloudinary = require('cloudinary').v2;
 const fs = require('fs');
@@ -10,6 +10,27 @@ cloudinary.config({
     api_key: process.env.CLOUDINARY_API_KEY,
     api_secret: process.env.CLOUDINARY_API_SECRET
 });
+
+const TEMPLATE_DIRS = [
+    path.join(__dirname, '../public/template'),
+    path.join(__dirname, '../public/templates')
+];
+
+function getDefaultTemplatePath() {
+    for (const dir of TEMPLATE_DIRS) {
+        if (!fs.existsSync(dir)) continue;
+        const candidates = fs
+            .readdirSync(dir)
+            .filter((name) => /\.(png|jpe?g|webp)$/i.test(name))
+            .sort();
+
+        if (candidates.length > 0) {
+            return path.join(dir, candidates[0]);
+        }
+    }
+
+    return null;
+}
 
 /**
  * Genera una imagen de entrada (ticket) con QR y datos personales
@@ -24,6 +45,20 @@ cloudinary.config({
  */
 async function generateEntryImage(entryData, eventTemplate) {
     try {
+        // Resolver plantilla: primero la del evento; si no existe, usar la primera plantilla disponible.
+        const resolvedTemplatePath = eventTemplate && fs.existsSync(eventTemplate)
+            ? eventTemplate
+            : getDefaultTemplatePath();
+
+        let templateImage = null;
+        if (resolvedTemplatePath) {
+            try {
+                templateImage = await loadImage(resolvedTemplatePath);
+            } catch (e) {
+                console.warn('No se pudo cargar la plantilla, se usará fondo base:', e.message);
+            }
+        }
+
         // 1. Generar QR
         const qrDataUrl = await QRCode.toDataURL(entryData.datos_qr, {
             errorCorrectionLevel: 'H',
@@ -33,8 +68,9 @@ async function generateEntryImage(entryData, eventTemplate) {
         });
 
         // 2. Crear canvas
-        const width = 1200;
-        const height = 1600;
+        // Si hay plantilla, respeta su orientación/dimensiones; si no, usa horizontal por defecto.
+        const width = templateImage ? templateImage.width : 1600;
+        const height = templateImage ? templateImage.height : 900;
         const canvas = createCanvas(width, height);
         const ctx = canvas.getContext('2d');
 
@@ -43,51 +79,50 @@ async function generateEntryImage(entryData, eventTemplate) {
         ctx.fillRect(0, 0, width, height);
 
         // Si hay plantilla, cargarla como imagen de fondo
-        if (eventTemplate && fs.existsSync(eventTemplate)) {
-            try {
-                const { createCanvas: _, Image } = require('canvas');
-                const image = new (require('canvas').Image)();
-                const templateData = fs.readFileSync(eventTemplate);
-                image.src = templateData;
-                ctx.drawImage(image, 0, 0, width, height);
-            } catch (e) {
-                console.warn('No se pudo cargar plantilla, usando fondo base', e.message);
-            }
+        if (templateImage) {
+            ctx.drawImage(templateImage, 0, 0, width, height);
         }
 
         // 3. Overlay semi-transparente para legibilidad del texto
+        const infoPanelHeight = Math.max(220, Math.round(height * 0.26));
         ctx.fillStyle = 'rgba(0, 0, 0, 0.6)';
-        ctx.fillRect(0, height - 500, width, 500);
+        ctx.fillRect(0, height - infoPanelHeight, width, infoPanelHeight);
 
         // 4. Agregar QR en la esquina superior derecha
-        const qrImage = new (require('canvas').Image)();
+        const qrImage = await loadImage(qrDataUrl);
         qrImage.src = qrDataUrl;
-        ctx.drawImage(qrImage, width - 250, 20, 230, 230);
+        const qrSize = Math.round(Math.min(width, height) * 0.16);
+        const qrMargin = Math.round(Math.min(width, height) * 0.02);
+        ctx.drawImage(qrImage, width - qrSize - qrMargin, qrMargin, qrSize, qrSize);
 
         // 5. Agregar ID de entrada (arriba del QR)
         ctx.fillStyle = '#FFFFFF';
-        ctx.font = 'bold 16px Arial';
+        ctx.font = `bold ${Math.max(16, Math.round(width * 0.014))}px Arial`;
         ctx.textAlign = 'right';
-        ctx.fillText(`ID: ${entryData.id_entrada}`, width - 20, 290);
+        ctx.fillText(`ID: ${entryData.id_entrada}`, width - qrMargin, qrMargin + qrSize + 26);
 
         // 6. Texto de datos personales (abajo)
         ctx.fillStyle = '#FFFFFF';
-        ctx.font = 'bold 36px Arial';
+        const panelTop = height - infoPanelHeight;
+        const leftPad = Math.round(width * 0.03);
+
+        ctx.font = `bold ${Math.max(28, Math.round(width * 0.03))}px Arial`;
         ctx.textAlign = 'left';
-        ctx.fillText(`Nombre: ${entryData.nombre}`, 50, height - 350);
+        ctx.fillText(`Nombre: ${entryData.nombre}`, leftPad, panelTop + Math.round(infoPanelHeight * 0.42));
 
-        ctx.font = 'bold 32px Arial';
-        ctx.fillText(`Monto: $${entryData.monto_pagado}`, 50, height - 250);
+        ctx.font = `bold ${Math.max(24, Math.round(width * 0.024))}px Arial`;
+        ctx.fillText(`Monto: Bs. ${entryData.monto_pagado}`, leftPad, panelTop + Math.round(infoPanelHeight * 0.67));
 
-        ctx.font = 'bold 24px Arial';
-        ctx.fillText(`Método: ${entryData.metodo_pago}`, 50, height - 150);
+        ctx.font = `bold ${Math.max(20, Math.round(width * 0.018))}px Arial`;
+        ctx.fillText(`Metodo: ${entryData.metodo_pago}`, leftPad, panelTop + Math.round(infoPanelHeight * 0.86));
 
         // 7. Línea divisoria
         ctx.strokeStyle = '#CCCCCC';
         ctx.lineWidth = 3;
         ctx.beginPath();
-        ctx.moveTo(50, height - 420);
-        ctx.lineTo(width - 50, height - 420);
+        const dividerY = panelTop + Math.round(infoPanelHeight * 0.2);
+        ctx.moveTo(leftPad, dividerY);
+        ctx.lineTo(width - leftPad, dividerY);
         ctx.stroke();
 
         // 8. Convertir canvas a buffer y subir a Cloudinary
@@ -124,9 +159,19 @@ async function generateEntryImage(entryData, eventTemplate) {
  * @returns {string} Ruta a la plantilla
  */
 function getEventTemplatePath(eventId) {
-    const templatesDir = path.join(__dirname, '../public/templates');
-    const templatePath = path.join(templatesDir, `${eventId}-template.png`);
-    return templatePath;
+    if (!eventId) return null;
+
+    for (const dir of TEMPLATE_DIRS) {
+        const pngPath = path.join(dir, `${eventId}-template.png`);
+        const jpgPath = path.join(dir, `${eventId}-template.jpg`);
+        const jpegPath = path.join(dir, `${eventId}-template.jpeg`);
+        const webpPath = path.join(dir, `${eventId}-template.webp`);
+
+        const templatePath = [pngPath, jpgPath, jpegPath, webpPath].find((candidate) => fs.existsSync(candidate));
+        if (templatePath) return templatePath;
+    }
+
+    return null;
 }
 
 module.exports = {
