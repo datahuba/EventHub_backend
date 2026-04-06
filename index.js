@@ -7,6 +7,7 @@ const { google } = require('googleapis');
 const { GoogleGenerativeAI } = require('@google/generative-ai');
 const fetch = require('node-fetch');
 const FormData = require('form-data');
+const { generateEntryImage, getEventTemplatePath } = require('./utils/entryGenerator');
 require('dotenv').config();
 
 // --- Bloque de configuración (sin cambios) ---
@@ -342,6 +343,62 @@ Monto (OCR): ${ocrData.amount || 'No detectado'}
     } catch (error) {
         console.error("Error al procesar el registro:", error);
         res.status(500).json({ message: "Fallo al procesar el registro." });
+    }
+});
+
+// ============================================================================
+// NUEVO: Endpoint para generar entradas (tickets) con QR
+// ============================================================================
+/**
+ * POST /api/generar-entrada
+ * Genera una imagen de entrada con QR y datos personales, la sube a Cloudinary
+ * 
+ * Body esperado:
+ * {
+ *   "id_entrada": "string - ID único",
+ *   "nombre": "string - Nombre del asistente", 
+ *   "monto_pagado": "string - Monto pagado",
+ *   "metodo_pago": "string - Método de pago",
+ *   "datos_qr": "string - Datos para codificar en QR",
+ *   "event_id": "string (opcional) - ID del evento para aplicar plantilla"
+ * }
+ */
+app.post('/api/generar-entrada', async (req, res) => {
+    try {
+        const { id_entrada, nombre, monto_pagado, metodo_pago, datos_qr, event_id } = req.body;
+
+        // Validar campos requeridos
+        if (!id_entrada || !nombre || !monto_pagado || !metodo_pago || !datos_qr) {
+            return res.status(400).json({
+                error: 'Faltan campos requeridos: id_entrada, nombre, monto_pagado, metodo_pago, datos_qr'
+            });
+        }
+
+        // Obtener plantilla del evento si existe
+        const templatePath = event_id ? getEventTemplatePath(event_id) : null;
+
+        // Generar imagen y subirla a Cloudinary
+        const imageUrl = await generateEntryImage({
+            id_entrada,
+            nombre,
+            monto_pagado,
+            metodo_pago,
+            datos_qr
+        }, templatePath);
+
+        res.status(200).json({
+            success: true,
+            message: 'Entrada generada exitosamente',
+            imagen_url: imageUrl,
+            id_entrada
+        });
+
+    } catch (error) {
+        console.error('Error generando entrada:', error);
+        res.status(500).json({
+            error: 'Error al generar la entrada',
+            details: error.message
+        });
     }
 });
 
