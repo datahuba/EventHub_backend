@@ -19,8 +19,17 @@ const {
     GEMINI_API_KEY
 } = process.env;
 
-if (!GOOGLE_SHEET_ID || !GOOGLE_CREDENTIALS_JSON || !TELEGRAM_BOT_TOKEN || !TELEGRAM_CHAT_ID || !GEMINI_API_KEY) {
-    console.error("FATAL ERROR: Faltan una o más variables de entorno.");
+const requiredEnvVars = [
+    'GOOGLE_SHEET_ID',
+    'GOOGLE_CREDENTIALS_JSON',
+    'TELEGRAM_BOT_TOKEN',
+    'TELEGRAM_CHAT_ID',
+    'GEMINI_API_KEY'
+];
+const missingEnvVars = requiredEnvVars.filter((key) => !process.env[key]);
+
+if (missingEnvVars.length > 0) {
+    console.error(`FATAL ERROR: Faltan variables de entorno: ${missingEnvVars.join(', ')}.`);
     process.exit(1);
 }
 let credentials;
@@ -37,6 +46,81 @@ const sheets = google.sheets({ version: 'v4', auth });
 // --- Fin del bloque de configuración ---
 const app = express();
 const port = process.env.PORT || 4000;
+
+function buildTelegramSummary({ buyer, totalAmount, registeredAttendeesInfo, ocrData }) {
+    const idList = registeredAttendeesInfo
+        .map(info => `- ${info.purchaseCode}`)
+        .join('\n');
+
+    return [
+        'Nueva Venta Registrada',
+        '',
+        `Comprador: ${buyer.name}`,
+        `Monto Pagado: ${totalAmount}`,
+        '',
+        'IDs de Entradas:',
+        idList || '- Sin IDs generados',
+        '',
+        'Verificación OCR:',
+        `Emisor: ${ocrData.sender || 'No detectado'}`,
+        `Monto (OCR): ${ocrData.amount || 'No detectado'}`,
+    ].join('\n');
+}
+
+async function sendTelegramNotification({ file, caption, message }) {
+    if (!TELEGRAM_BOT_TOKEN || !TELEGRAM_CHAT_ID) {
+        console.warn('Telegram no configurado: faltan TELEGRAM_BOT_TOKEN o TELEGRAM_CHAT_ID.');
+        return { ok: false, skipped: true };
+    }
+
+    const hasImageFile = file && typeof file.mimetype === 'string' && file.mimetype.startsWith('image/');
+    const isPdfFile = file && file.mimetype === 'application/pdf';
+    const endpoint = hasImageFile ? 'sendPhoto' : isPdfFile ? 'sendDocument' : 'sendMessage';
+    const telegramApiUrl = `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/${endpoint}`;
+
+    if (endpoint === 'sendMessage') {
+        const response = await fetch(telegramApiUrl, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                chat_id: TELEGRAM_CHAT_ID,
+                text: message,
+            }),
+        });
+
+        if (!response.ok) {
+            const errorText = await response.text();
+            throw new Error(`Telegram sendMessage falló: ${response.status} ${errorText}`);
+        }
+
+        return { ok: true, endpoint };
+    }
+
+    const formData = new FormData();
+    formData.append('chat_id', TELEGRAM_CHAT_ID);
+    formData.append('caption', caption);
+
+    if (hasImageFile) {
+        formData.append('photo', file.buffer, {
+            filename: file.originalname || 'proof.jpg',
+            contentType: file.mimetype,
+        });
+    } else {
+        formData.append('document', file.buffer, {
+            filename: file.originalname || 'proof.pdf',
+            contentType: file.mimetype,
+        });
+    }
+
+    const response = await fetch(telegramApiUrl, { method: 'POST', body: formData });
+
+    if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`Telegram ${endpoint} falló: ${response.status} ${errorText}`);
+    }
+
+    return { ok: true, endpoint };
+}
 
 // --- INICIO DEL CAMBIO: CONFIGURACIÓN DE CORS MEJORADA ---
 
@@ -95,10 +179,6 @@ function generateSixDigitPrime() {
     return primeCandidate;
 }
 // --- Fin de funciones ---
-
-
-// *****************************************************************************
-// --- INICIO DEL CAMBIO #1: NUEVA FUNCIÓN PARA LEER EL GOOGLE SHEET ---
 // *****************************************************************************
 
 /**
@@ -298,44 +378,25 @@ app.post('/api/submit', upload.single('proof'), async (req, res) => {
         }
 
         // --- 5. NOTIFICACIÓN RESUMEN A TELEGRAM ---
-        const idList = registeredAttendeesInfo
-            .map(info => `\`${info.purchaseCode}\``)
-            .join('\n');
-
-        const summaryCaption = `
-✅ *Nueva Venta Registrada*
-
-*Comprador:* ${buyer.name}
-*Monto Pagado:* ${totalAmount}
-
---- IDs de Entradas ---
-${idList}
-
---- Verificación OCR ---
-Emisor: ${ocrData.sender || 'No detectado'}
-Monto (OCR): ${ocrData.amount || 'No detectado'}
-`;
+        const summaryCaption = buildTelegramSummary({
+            buyer,
+            totalAmount,
+            registeredAttendeesInfo,
+            ocrData,
+        });
 
         if (paymentMethod === 'qr' && file) {
-            const telegramApiUrl = `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendPhoto`;
-            const formData = new FormData();
-            formData.append('chat_id', TELEGRAM_CHAT_ID);
-            formData.append('caption', summaryCaption);
-            formData.append('parse_mode', 'Markdown');
-            formData.append('photo', file.buffer, { filename: 'proof.jpg' });
-            await fetch(telegramApiUrl, { method: 'POST', body: formData });
-        } else {
-            const telegramApiUrl = `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`;
-            // ***** CORRECCIÓN #3 (Error de tipeo) *****
-            await fetch(telegramApiUrl, { // <-- Decía 'telegramApiurl'
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    chat_id: TELEGRAM_CHAT_ID,
-                    text: summaryCaption,
-                    parse_mode: 'Markdown',
-                }),
+            const telegramResult = await sendTelegramNotification({
+                file,
+                caption: summaryCaption,
+                message: summaryCaption,
             });
+            console.log(`Telegram enviado por ${telegramResult.endpoint || 'skip'}.`);
+        } else {
+            const telegramResult = await sendTelegramNotification({
+                message: summaryCaption,
+            });
+            console.log(`Telegram enviado por ${telegramResult.endpoint || 'skip'}.`);
         }
 
         res.status(200).json({ message: "Registro de múltiples asistentes exitoso!" });
