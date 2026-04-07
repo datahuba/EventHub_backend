@@ -64,7 +64,7 @@ async function generateEntryImage(entryData, eventTemplate) {
             errorCorrectionLevel: 'H',
             type: 'image/png',
             width: 200,
-            margin: 0
+            margin: 2   // zona de silencio mínima para que sea escaneable
         });
 
         // 2. Crear canvas
@@ -91,9 +91,15 @@ async function generateEntryImage(entryData, eventTemplate) {
         // 4. Agregar QR en la esquina superior derecha
         const qrImage = await loadImage(qrDataUrl);
         qrImage.src = qrDataUrl;
-        const qrSize = Math.round(Math.min(width, height) * 0.16);
+        const qrSize = Math.round(Math.min(width, height) * 0.176);
         const qrMargin = Math.round(Math.min(width, height) * 0.02);
-        ctx.drawImage(qrImage, width - qrSize - qrMargin, qrMargin, qrSize, qrSize);
+        const qrPadding = 8;
+        const qrX = width - qrSize - qrMargin;
+        const qrY = qrMargin;
+        // Fondo blanco detrás del QR para garantizar contraste y escaneabilidad
+        ctx.fillStyle = '#FFFFFF';
+        ctx.fillRect(qrX - qrPadding, qrY - qrPadding, qrSize + qrPadding * 2, qrSize + qrPadding * 2);
+        ctx.drawImage(qrImage, qrX, qrY, qrSize, qrSize);
 
         // 5. Agregar ID de entrada (arriba del QR)
         ctx.fillStyle = '#FFFFFF';

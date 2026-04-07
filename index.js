@@ -429,14 +429,31 @@ app.post('/api/submit', upload.single('proof'), async (req, res) => {
  */
 app.post('/api/generar-entrada', async (req, res) => {
     try {
-        const { id_entrada, nombre, monto_pagado, metodo_pago, datos_qr, event_id } = req.body;
+        const { id_entrada, nombre, monto_pagado, metodo_pago, event_id } = req.body;
 
         // Validar campos requeridos
-        if (!id_entrada || !nombre || !monto_pagado || !metodo_pago || !datos_qr) {
+        if (!id_entrada || !nombre || !monto_pagado || !metodo_pago) {
             return res.status(400).json({
-                error: 'Faltan campos requeridos: id_entrada, nombre, monto_pagado, metodo_pago, datos_qr'
+                error: 'Faltan campos requeridos: id_entrada, nombre, monto_pagado, metodo_pago'
             });
         }
+
+        // Buscar el valor P (producto de primos, columna J) en Google Sheets
+        // para usarlo como dato del QR — que es lo que busca el validador
+        const sheetResponse = await sheets.spreadsheets.values.get({
+            spreadsheetId: GOOGLE_SHEET_ID,
+            range: 'Respuestas!A:J',
+        });
+        const rows = sheetResponse.data.values || [];
+        const matchingRow = rows.find(row => row[0] === id_entrada);
+
+        if (!matchingRow || !matchingRow[9]) {
+            return res.status(404).json({
+                error: `No se encontró la entrada "${id_entrada}" en el sistema. Verifica el ID de compra.`
+            });
+        }
+
+        const datos_qr = matchingRow[9]; // Columna J = producto P (F1 × F2)
 
         // Obtener plantilla del evento si existe
         const templatePath = event_id ? getEventTemplatePath(event_id) : null;
