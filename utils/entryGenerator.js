@@ -124,7 +124,7 @@ async function generateTicketBuffer(entryData, eventTemplate) {
  */
 async function generateEntryImage(entryData, eventTemplate) {
     try {
-        const { buffer, id_entrada } = { ...(await generateTicketBuffer(entryData, eventTemplate)), id_entrada: entryData.id_entrada };
+        const { buffer } = await generateTicketBuffer(entryData, eventTemplate);
 
         const result = await new Promise((resolve, reject) => {
             const uploadStream = cloudinary.uploader.upload_stream(
@@ -188,7 +188,9 @@ async function generateEntriesPdf(entriesDataArray, eventTemplate) {
                 {
                     folder: 'eventhub/entradas',
                     resource_type: 'raw',
-                    public_id: `entradas_${groupId}.pdf`,
+                    type: 'upload',
+                    access_mode: 'public',
+                    public_id: `entradas_${groupId}`,
                     format: 'pdf'
                 },
                 (error, result) => {
