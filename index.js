@@ -383,9 +383,17 @@ app.post('/api/submit', upload.single('proof'), async (req, res) => {
 
         // --- 4. ENVÍO DEL LOTE DE FILAS A GOOGLE SHEETS ---
         if (allNewRows.length > 0) {
-            await sheets.spreadsheets.values.append({
+            // Buscar la última fila real en columna A para no dejar huecos
+            const colAResponse = await sheets.spreadsheets.values.get({
                 spreadsheetId: GOOGLE_SHEET_ID,
-                range: 'Respuestas!A:AD',
+                range: 'Respuestas!A:A',
+            });
+            const lastRow = (colAResponse.data.values || []).length;
+            const nextRow = lastRow + 1;
+
+            await sheets.spreadsheets.values.update({
+                spreadsheetId: GOOGLE_SHEET_ID,
+                range: `Respuestas!A${nextRow}`,
                 valueInputOption: 'USER_ENTERED',
                 resource: {
                     values: allNewRows,
