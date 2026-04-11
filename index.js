@@ -7,7 +7,7 @@ const { google } = require('googleapis');
 const { GoogleGenerativeAI } = require('@google/generative-ai');
 const fetch = require('node-fetch');
 const FormData = require('form-data');
-const { generateEntryImage, getEventTemplatePath } = require('./utils/entryGenerator');
+const { generateEntryImage, generateEntriesPdf, getEventTemplatePath } = require('./utils/entryGenerator');
 require('dotenv').config();
 
 // --- Bloque de configuración (sin cambios) ---
@@ -47,16 +47,22 @@ const sheets = google.sheets({ version: 'v4', auth });
 const app = express();
 const port = process.env.PORT || 4000;
 
-function buildTelegramSummary({ buyer, totalAmount, registeredAttendeesInfo, ocrData }) {
+function buildTelegramSummary({ buyer, totalAmount, registeredAttendeesInfo, ocrData, eventId }) {
+    const cantidad = registeredAttendeesInfo.length;
     const idList = registeredAttendeesInfo
         .map(info => `- ${info.purchaseCode}`)
         .join('\n');
 
     return [
-        'Nueva Venta Registrada',
+        '🎟️ Nueva Venta Registrada',
         '',
-        `Comprador: ${buyer.name}`,
-        `Monto Pagado: ${totalAmount}`,
+        `👤 Comprador: ${buyer.name}`,
+        `📱 Teléfono: ${buyer.phone || 'N/A'}`,
+        `📧 Email: ${buyer.email || 'N/A'}`,
+        eventId ? `🎉 Evento: ${eventId}` : '',
+        '',
+        `🎫 Cantidad de entradas: ${cantidad}`,
+        `💰 Monto Total: Bs. ${totalAmount}`,
         '',
         'IDs de Entradas:',
         idList || '- Sin IDs generados',
@@ -64,7 +70,7 @@ function buildTelegramSummary({ buyer, totalAmount, registeredAttendeesInfo, ocr
         'Verificación OCR:',
         `Emisor: ${ocrData.sender || 'No detectado'}`,
         `Monto (OCR): ${ocrData.amount || 'No detectado'}`,
-    ].join('\n');
+    ].filter(line => line !== '').join('\n');
 }
 
 async function sendTelegramNotification({ file, caption, message }) {
@@ -268,7 +274,8 @@ app.post('/api/submit', upload.single('proof'), async (req, res) => {
             buyer,
             totalAmount,
             paymentMethod,
-            attendees
+            attendees,
+            eventId
         } = req.body;
 
         // --- CORRECCIÓN DE DATOS: Soporte para FormData (strings) y Estructura Plana ---
@@ -285,16 +292,18 @@ app.post('/api/submit', upload.single('proof'), async (req, res) => {
         // Esto soluciona el error "attendees is not iterable" cuando el frontend envía campos sueltos.
         if ((!attendees || !Array.isArray(attendees) || attendees.length === 0) && req.body.name) {
             console.log("Detectada estructura plana. Convirtiendo a estructura de objetos...");
+            const cantidad = Math.min(10, Math.max(1, parseInt(req.body.cantidad) || 1));
+            if (!eventId) eventId = req.body.eventId || '';
             buyer = {
                 name: req.body.name,
                 email: req.body.email || '',
                 phone: req.body.phone || ''
             };
-            attendees = [{
+            attendees = Array.from({ length: cantidad }, () => ({
                 fullName: req.body.name,
                 phone: req.body.phone || '',
                 email: req.body.email || ''
-            }];
+            }));
         }
 
         // Inicialización por defecto para evitar crashes si todo falla
@@ -334,26 +343,30 @@ app.post('/api/submit', upload.single('proof'), async (req, res) => {
             const productC = primeA * primeB;
             console.log(`Fila para '${attendee.fullName}': Par único ${pairKey} encontrado en ${attempts} intento(s).`);
 
+            const cantidadTotal = attendees.length;
             const newRow = [
-                /* A - ID */ purchaseCode,
-                /* B - NOMBRE (Asistente) */ attendee.fullName || '',
-                /* C - TELEFONO (Asistente) */ attendee.phone || '',
-                /* D - NAME (Comprador) */ buyer.name || '',
-                /* E - PHONE (Comprador) */ buyer.phone || '',
-                /* F - EMAIL (Comprador) */ buyer.email || '',
-                /* G - CI */ '',
-                /* H - F1 */ primeA,
-                /* I - F2 */ primeB,
-                /* J - P */ productC.toString(),
-                /* K - TOTAL */ totalAmount,
-                /* L - PAGO */ paymentMethod,
-                /* M - COMPROBANTE */ (paymentMethod === 'qr' && file) ? 'Sí' : 'No',
-                /* N - HORA */ new Date().toISOString(),
-                /* O - OCR Nombre Emisor */ ocrData.sender || 'N/A',
-                /* P - OCR Nombre Receptor */ ocrData.receiver || 'N/A',
-                /* Q - OCR Monto */ ocrData.amount || 'N/A',
-                /* R - OCR Fecha/Hora */ ocrData.dateTime || 'N/A',
-                /* S - VALIDADO */ '0',
+                /* A  - ID */               purchaseCode,
+                /* B  - NOMBRE (Asistente)*/attendee.fullName || '',
+                /* C  - TELEFONO */         attendee.phone || '',
+                /* D  - NAME (Comprador) */ buyer.name || '',
+                /* E  - PHONE (Comprador)*/buyer.phone || '',
+                /* F  - EMAIL (Comprador)*/buyer.email || '',
+                /* G  - CI */               '',
+                /* H  - F1 */               primeA,
+                /* I  - F2 */               primeB,
+                /* J  - P */                productC.toString(),
+                /* K  - TOTAL */            totalAmount,
+                /* L  - PAGO */             paymentMethod,
+                /* M  - COMPROBANTE */      (paymentMethod === 'qr' && file) ? 'Sí' : 'No',
+                /* N  - HORA */             new Date().toISOString(),
+                /* O  - OCR Emisor */       ocrData.sender || 'N/A',
+                /* P  - OCR Receptor */     ocrData.receiver || 'N/A',
+                /* Q  - OCR Monto */        ocrData.amount || 'N/A',
+                /* R  - OCR Fecha/Hora */   ocrData.dateTime || 'N/A',
+                /* S  - VALIDADO */         '0',
+                /* T  - EVENT_ID */         eventId || '',
+                /* U..AC - (vacío) */       '', '', '', '', '', '', '', '', '',
+                /* AD - CANTIDAD */         cantidadTotal,
             ];
 
             allNewRows.push(newRow);
@@ -372,7 +385,7 @@ app.post('/api/submit', upload.single('proof'), async (req, res) => {
         if (allNewRows.length > 0) {
             await sheets.spreadsheets.values.append({
                 spreadsheetId: GOOGLE_SHEET_ID,
-                range: 'Respuestas!A:R',
+                range: 'Respuestas!A:AD',
                 valueInputOption: 'USER_ENTERED',
                 resource: {
                     values: allNewRows,
@@ -386,6 +399,7 @@ app.post('/api/submit', upload.single('proof'), async (req, res) => {
             totalAmount,
             registeredAttendeesInfo,
             ocrData,
+            eventId,
         });
 
         if (paymentMethod === 'qr' && file) {
@@ -480,6 +494,57 @@ app.post('/api/generar-entrada', async (req, res) => {
             error: 'Error al generar la entrada',
             details: error.message
         });
+    }
+});
+
+// ============================================================================
+// Endpoint para generar un PDF con múltiples entradas
+// ============================================================================
+/**
+ * POST /api/generar-entradas-pdf
+ * Body: { purchase_codes: string[], nombre: string, monto_pagado: string, metodo_pago: string, event_id?: string }
+ * Busca cada código en Google Sheets, genera un ticket por página y sube el PDF a Cloudinary.
+ */
+app.post('/api/generar-entradas-pdf', async (req, res) => {
+    try {
+        const { purchase_codes, nombre, monto_pagado, metodo_pago, event_id } = req.body;
+
+        if (!purchase_codes || !Array.isArray(purchase_codes) || purchase_codes.length === 0) {
+            return res.status(400).json({ error: 'Se requiere el campo purchase_codes (array de IDs).' });
+        }
+
+        // Obtener todas las filas del sheet una sola vez
+        const sheetResponse = await sheets.spreadsheets.values.get({
+            spreadsheetId: GOOGLE_SHEET_ID,
+            range: 'Respuestas!A:J',
+        });
+        const rows = sheetResponse.data.values || [];
+
+        // Construir datos de cada entrada buscando el valor P en columna J
+        const entriesData = purchase_codes.map(code => {
+            const row = rows.find(r => r[0] === code);
+            const datos_qr = row ? row[9] : code; // fallback al código si no se encuentra
+            return {
+                id_entrada: code,
+                nombre: nombre || (row ? row[1] : 'Asistente'),
+                monto_pagado: monto_pagado || '',
+                metodo_pago: metodo_pago || 'qr',
+                datos_qr,
+            };
+        });
+
+        const templatePath = event_id ? getEventTemplatePath(event_id) : null;
+        const pdfUrl = await generateEntriesPdf(entriesData, templatePath);
+
+        res.status(200).json({
+            success: true,
+            message: `PDF con ${purchase_codes.length} entrada(s) generado exitosamente`,
+            pdf_url: pdfUrl,
+        });
+
+    } catch (error) {
+        console.error('Error generando PDF de entradas:', error);
+        res.status(500).json({ error: 'Error al generar el PDF', details: error.message });
     }
 });
 
