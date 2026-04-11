@@ -1,6 +1,5 @@
 const { createCanvas, loadImage } = require('canvas');
 const QRCode = require('qrcode');
-const PDFDocument = require('pdfkit');
 const cloudinary = require('cloudinary').v2;
 const fs = require('fs');
 const path = require('path');
@@ -149,63 +148,51 @@ async function generateEntryImage(entryData, eventTemplate) {
 }
 
 /**
- * Genera un PDF con múltiples tickets (uno por página) y lo sube a Cloudinary
+ * Genera una imagen vertical con todos los tickets apilados y la sube a Cloudinary.
  * @param {Array} entriesDataArray - Array de objetos entryData
  * @param {string} eventTemplate - Ruta a la plantilla del evento
- * @returns {Promise<string>} URL del PDF subido a Cloudinary
+ * @returns {Promise<string>} URL de la imagen subida a Cloudinary
  */
-async function generateEntriesPdf(entriesDataArray, eventTemplate) {
-    try {
-        // Generar todos los buffers de tickets en paralelo
-        const ticketResults = await Promise.all(
-            entriesDataArray.map(entryData => generateTicketBuffer(entryData, eventTemplate))
-        );
+async function generateEntriesImage(entriesDataArray, eventTemplate) {
+    const ticketResults = await Promise.all(
+        entriesDataArray.map(entryData => generateTicketBuffer(entryData, eventTemplate))
+    );
 
-        const { width, height } = ticketResults[0];
+    const { width, height } = ticketResults[0];
+    const separator = 8;
+    const totalHeight = height * ticketResults.length + separator * (ticketResults.length - 1);
 
-        // Crear PDF con pdfkit — una página por ticket
-        const doc = new PDFDocument({ autoFirstPage: false, size: [width, height] });
-        const buffers = [];
+    const canvas = createCanvas(width, totalHeight);
+    const ctx = canvas.getContext('2d');
 
-        doc.on('data', chunk => buffers.push(chunk));
+    ctx.fillStyle = '#111111';
+    ctx.fillRect(0, 0, width, totalHeight);
 
-        for (const { buffer } of ticketResults) {
-            doc.addPage({ size: [width, height] });
-            doc.image(buffer, 0, 0, { width, height });
-        }
-
-        doc.end();
-
-        const pdfBuffer = await new Promise((resolve, reject) => {
-            doc.on('end', () => resolve(Buffer.concat(buffers)));
-            doc.on('error', reject);
-        });
-
-        // Subir PDF a Cloudinary
-        const groupId = `${entriesDataArray[0].id_entrada}_${Date.now()}`;
-        const result = await new Promise((resolve, reject) => {
-            const uploadStream = cloudinary.uploader.upload_stream(
-                {
-                    folder: 'eventhub/entradas',
-                    resource_type: 'raw',
-                    type: 'upload',
-                    access_mode: 'public',
-                    public_id: `entradas_${groupId}`,
-                    format: 'pdf'
-                },
-                (error, result) => {
-                    if (error) reject(error);
-                    else resolve(result);
-                }
-            );
-            uploadStream.end(pdfBuffer);
-        });
-
-        return result.secure_url;
-    } catch (error) {
-        console.error('Error generando PDF de entradas:', error);
-        throw error;
+    for (let i = 0; i < ticketResults.length; i++) {
+        const ticketImage = await loadImage(ticketResults[i].buffer);
+        const y = i * (height + separator);
+        ctx.drawImage(ticketImage, 0, y, width, height);
     }
+
+    const finalBuffer = canvas.toBuffer('image/png');
+
+    const groupId = `${entriesDataArray[0].id_entrada}_${Date.now()}`;
+    const result = await new Promise((resolve, reject) => {
+        const uploadStream = cloudinary.uploader.upload_stream(
+            {
+                folder: 'eventhub/entradas',
+                resource_type: 'image',
+                public_id: `entradas_${groupId}`
+            },
+            (error, result) => {
+                if (error) reject(error);
+                else resolve(result);
+            }
+        );
+        uploadStream.end(finalBuffer);
+    });
+
+    return result.secure_url;
 }
 
 /**
@@ -229,6 +216,6 @@ function getEventTemplatePath(eventId) {
 
 module.exports = {
     generateEntryImage,
-    generateEntriesPdf,
+    generateEntriesImage,
     getEventTemplatePath
 };

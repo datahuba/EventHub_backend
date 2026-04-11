@@ -7,7 +7,7 @@ const { google } = require('googleapis');
 const { GoogleGenerativeAI } = require('@google/generative-ai');
 const fetch = require('node-fetch');
 const FormData = require('form-data');
-const { generateEntryImage, generateEntriesPdf, getEventTemplatePath } = require('./utils/entryGenerator');
+const { generateEntryImage, generateEntriesImage, getEventTemplatePath } = require('./utils/entryGenerator');
 require('dotenv').config();
 
 // --- Bloque de configuración (sin cambios) ---
@@ -534,12 +534,12 @@ app.post('/api/generar-entradas-pdf', async (req, res) => {
         });
 
         const templatePath = event_id ? getEventTemplatePath(event_id) : null;
-        const pdfUrl = await generateEntriesPdf(entriesData, templatePath);
+        const imageUrl = await generateEntriesImage(entriesData, templatePath);
 
         res.status(200).json({
             success: true,
             message: `PDF con ${purchase_codes.length} entrada(s) generado exitosamente`,
-            pdf_url: pdfUrl,
+            pdf_url: imageUrl,
         });
 
     } catch (error) {
