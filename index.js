@@ -292,7 +292,7 @@ app.post('/api/submit', upload.single('proof'), async (req, res) => {
         // Esto soluciona el error "attendees is not iterable" cuando el frontend envía campos sueltos.
         if ((!attendees || !Array.isArray(attendees) || attendees.length === 0) && req.body.name) {
             console.log("Detectada estructura plana. Convirtiendo a estructura de objetos...");
-            const cantidad = Math.min(10, Math.max(1, parseInt(req.body.cantidad) || 1));
+            const cantidad = Math.min(70, Math.max(1, parseInt(req.body.cantidad) || 1));
             if (!eventId) eventId = req.body.eventId || '';
             buyer = {
                 name: req.body.name,
@@ -554,6 +554,135 @@ app.post('/api/generar-entradas-pdf', async (req, res) => {
         console.error('Error generando PDF de entradas:', error);
         res.status(500).json({ error: 'Error al generar el PDF', details: error.message });
     }
+});
+
+// ============================================================================
+// GET /api/generador — Genera las 70 entradas y actualiza el Sheet
+// ============================================================================
+app.get('/api/generador', async (req, res) => {
+    const entries = [
+        { id: 'ZJ7DIV9H',  monto: '120',  metodo: 'qr', event_id: 'gargola002' },
+        { id: 'RD5SOWG8',  monto: '8280', metodo: 'qr', event_id: 'gargola002' },
+        { id: '5N3F9U3M',  monto: '8280', metodo: 'qr', event_id: 'gargola002' },
+        { id: 'ZICTUOVZ',  monto: '8280', metodo: 'qr', event_id: 'gargola002' },
+        { id: 'D79SJ7W2',  monto: '8280', metodo: 'qr', event_id: 'gargola002' },
+        { id: 'H7B4UA9T',  monto: '8280', metodo: 'qr', event_id: 'gargola002' },
+        { id: 'Y03BUZ3W',  monto: '8280', metodo: 'qr', event_id: 'gargola002' },
+        { id: 'CFOZ3DKA',  monto: '8280', metodo: 'qr', event_id: 'gargola002' },
+        { id: 'RH38SM7B',  monto: '8280', metodo: 'qr', event_id: 'gargola002' },
+        { id: 'L7B8QHNX',  monto: '8280', metodo: 'qr', event_id: 'gargola002' },
+        { id: 'W06X5N8K',  monto: '8280', metodo: 'qr', event_id: 'gargola002' },
+        { id: 'CM3I0A9R',  monto: '1200', metodo: 'qr', event_id: 'gargola002' },
+        { id: 'UD7HYE5P',  monto: '1200', metodo: 'qr', event_id: 'gargola002' },
+        { id: 'G02QZWG0',  monto: '1200', metodo: 'qr', event_id: 'gargola002' },
+        { id: 'E1R4UXFL',  monto: '1200', metodo: 'qr', event_id: 'gargola002' },
+        { id: 'GVO54YUN',  monto: '1200', metodo: 'qr', event_id: 'gargola002' },
+        { id: '34R2EIPS',  monto: '1200', metodo: 'qr', event_id: 'gargola002' },
+        { id: '3F1QTZYO',  monto: '1200', metodo: 'qr', event_id: 'gargola002' },
+        { id: 'GU0MD04Q',  monto: '1200', metodo: 'qr', event_id: 'gargola002' },
+        { id: '53ON2D9I',  monto: '1200', metodo: 'qr', event_id: 'gargola002' },
+        { id: 'JRNP4FX1',  monto: '1200', metodo: 'qr', event_id: 'gargola002' },
+        { id: 'N4QG4U09',  monto: '1200', metodo: 'qr', event_id: 'gargola002' },
+        { id: 'B5X13DGU',  monto: '1200', metodo: 'qr', event_id: 'gargola002' },
+        { id: '8J507N8S',  monto: '1200', metodo: 'qr', event_id: 'gargola002' },
+        { id: 'KHBC5894',  monto: '1200', metodo: 'qr', event_id: 'gargola002' },
+        { id: 'IK8LPDRN',  monto: '1200', metodo: 'qr', event_id: 'gargola002' },
+        { id: 'EM607Q6R',  monto: '1200', metodo: 'qr', event_id: 'gargola002' },
+        { id: '3XW76OIF',  monto: '1200', metodo: 'qr', event_id: 'gargola002' },
+        { id: 'ZVX1R7ZC',  monto: '1200', metodo: 'qr', event_id: 'gargola002' },
+        { id: 'UMWM3ZQ5',  monto: '1200', metodo: 'qr', event_id: 'gargola002' },
+        { id: 'MWV90ZZM',  monto: '1200', metodo: 'qr', event_id: 'gargola002' },
+        { id: 'LB4NI8MM',  monto: '1200', metodo: 'qr', event_id: 'gargola002' },
+        { id: 'BYRKRXXZ',  monto: '1200', metodo: 'qr', event_id: 'gargola002' },
+        { id: 'PO9QM97B',  monto: '1200', metodo: 'qr', event_id: 'gargola002' },
+        { id: 'Z40HUWAV',  monto: '1200', metodo: 'qr', event_id: 'gargola002' },
+        { id: 'YO0TO8R3',  monto: '1200', metodo: 'qr', event_id: 'gargola002' },
+        { id: 'FW5ZVEH5',  monto: '1200', metodo: 'qr', event_id: 'gargola002' },
+        { id: '717ZFXJH',  monto: '1200', metodo: 'qr', event_id: 'gargola002' },
+        { id: '1U0KCK8E',  monto: '1200', metodo: 'qr', event_id: 'gargola002' },
+        { id: 'BWMZ553Q',  monto: '1200', metodo: 'qr', event_id: 'gargola002' },
+        { id: 'THVPG6IV',  monto: '1200', metodo: 'qr', event_id: 'gargola002' },
+        { id: '2SYRUWU4',  monto: '1200', metodo: 'qr', event_id: 'gargola002' },
+        { id: 'PEKP35AH',  monto: '1200', metodo: 'qr', event_id: 'gargola002' },
+        { id: 'XDW9GR0M',  monto: '1200', metodo: 'qr', event_id: 'gargola002' },
+        { id: '50KEPSRD',  monto: '1200', metodo: 'qr', event_id: 'gargola002' },
+        { id: 'LXD4BUNC',  monto: '1200', metodo: 'qr', event_id: 'gargola002' },
+        { id: '8BLJQD8U',  monto: '1200', metodo: 'qr', event_id: 'gargola002' },
+        { id: 'J0OH2QNN',  monto: '1200', metodo: 'qr', event_id: 'gargola002' },
+        { id: 'U5NNFDRQ',  monto: '1200', metodo: 'qr', event_id: 'gargola002' },
+        { id: 'FFZFUEP2',  monto: '1200', metodo: 'qr', event_id: 'gargola002' },
+        { id: 'PCF2GCMW',  monto: '1200', metodo: 'qr', event_id: 'gargola002' },
+        { id: '7FG7N3IL',  monto: '1200', metodo: 'qr', event_id: 'gargola002' },
+        { id: 'V4VVX8DF',  monto: '1200', metodo: 'qr', event_id: 'gargola002' },
+        { id: '9OUDNKZU',  monto: '1200', metodo: 'qr', event_id: 'gargola002' },
+        { id: 'F3ZD7N7K',  monto: '1200', metodo: 'qr', event_id: 'gargola002' },
+        { id: 'LYZUUO4R',  monto: '1200', metodo: 'qr', event_id: 'gargola002' },
+        { id: 'KAHHXU8R',  monto: '1200', metodo: 'qr', event_id: 'gargola002' },
+        { id: 'U4SH8IP3',  monto: '1200', metodo: 'qr', event_id: 'gargola002' },
+        { id: '7HT8GOMQ',  monto: '1200', metodo: 'qr', event_id: 'gargola002' },
+        { id: 'D3RKVXVX',  monto: '1200', metodo: 'qr', event_id: 'gargola002' },
+        { id: 'FBQ5W8L9',  monto: '1200', metodo: 'qr', event_id: 'gargola002' },
+        { id: '4R5L8EOH',  monto: '1080', metodo: 'qr', event_id: 'gargola002' },
+        { id: '677W604J',  monto: '1080', metodo: 'qr', event_id: 'gargola002' },
+        { id: 'MFDVCMCH',  monto: '1080', metodo: 'qr', event_id: 'gargola002' },
+        { id: 'GCA1PMFE',  monto: '1080', metodo: 'qr', event_id: 'gargola002' },
+        { id: 'D84NJGGX',  monto: '1080', metodo: 'qr', event_id: 'gargola002' },
+        { id: '7KV8HB15',  monto: '1080', metodo: 'qr', event_id: 'gargola002' },
+        { id: 'F0TYP804',  monto: '1080', metodo: 'qr', event_id: 'gargola002' },
+        { id: 'CP0MBKBW',  monto: '1080', metodo: 'qr', event_id: 'gargola002' },
+        { id: 'Z1J9LOW6',  monto: '1080', metodo: 'qr', event_id: 'gargola002' },
+    ];
+
+    res.setHeader('Content-Type', 'text/html; charset=utf-8');
+    res.setHeader('Transfer-Encoding', 'chunked');
+    res.write('<pre style="font-family:monospace;padding:20px">');
+    res.write(`Iniciando generacion de ${entries.length} entradas...\n\n`);
+
+    // Obtener todas las filas del sheet una sola vez
+    const sheetRows = await sheets.spreadsheets.values.get({
+        spreadsheetId: GOOGLE_SHEET_ID,
+        range: 'Respuestas!A:A',
+    });
+    const colA = (sheetRows.data.values || []).map(r => r[0]);
+
+    let ok = 0, err = 0;
+    for (let i = 0; i < entries.length; i++) {
+        const entry = entries[i];
+        res.write(`[${i + 1}/${entries.length}] ${entry.id} ... `);
+        try {
+            const templatePath = getEventTemplatePath(entry.event_id);
+            const imageUrl = await generateEntryImage({
+                id_entrada: entry.id,
+                nombre: entry.id,
+                monto_pagado: entry.monto,
+                metodo_pago: entry.metodo,
+                datos_qr: entry.id,
+            }, templatePath);
+
+            // Buscar la fila en Sheets y actualizar columna U
+            const rowIdx = colA.indexOf(entry.id);
+            if (rowIdx !== -1) {
+                const rowNumber = rowIdx + 1;
+                await sheets.spreadsheets.values.update({
+                    spreadsheetId: GOOGLE_SHEET_ID,
+                    range: `Respuestas!U${rowNumber}`,
+                    valueInputOption: 'USER_ENTERED',
+                    resource: { values: [[imageUrl]] },
+                });
+                res.write(`OK fila ${rowNumber} → ${imageUrl}\n`);
+            } else {
+                res.write(`OK (fila no encontrada) → ${imageUrl}\n`);
+            }
+            ok++;
+        } catch (e) {
+            res.write(`ERROR: ${e.message}\n`);
+            err++;
+        }
+    }
+
+    res.write(`\n--- Completado: ${ok} OK, ${err} errores ---`);
+    res.write('</pre>');
+    res.end();
 });
 
 app.listen(port, () => {

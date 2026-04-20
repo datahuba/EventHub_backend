@@ -96,15 +96,12 @@ async function generateTicketBuffer(entryData, eventTemplate) {
     const panelTop = height - infoPanelHeight;
     const leftPad = Math.round(width * 0.03);
 
-    ctx.font = `bold ${Math.max(28, Math.round(width * 0.03))}px Arial`;
-    ctx.textAlign = 'left';
-    ctx.fillText(`Nombre: ${entryData.nombre}`, leftPad, panelTop + Math.round(infoPanelHeight * 0.42));
-
     ctx.font = `bold ${Math.max(24, Math.round(width * 0.024))}px Arial`;
-    ctx.fillText(`Monto: Bs. ${entryData.monto_pagado}`, leftPad, panelTop + Math.round(infoPanelHeight * 0.67));
+    ctx.textAlign = 'left';
+    ctx.fillText(`Monto: Bs. ${entryData.monto_pagado}`, leftPad, panelTop + Math.round(infoPanelHeight * 0.55));
 
     ctx.font = `bold ${Math.max(20, Math.round(width * 0.018))}px Arial`;
-    ctx.fillText(`Metodo: ${entryData.metodo_pago}`, leftPad, panelTop + Math.round(infoPanelHeight * 0.86));
+    ctx.fillText(`Metodo: ${entryData.metodo_pago}`, leftPad, panelTop + Math.round(infoPanelHeight * 0.80));
 
     // 7. Línea divisoria
     ctx.strokeStyle = '#CCCCCC';

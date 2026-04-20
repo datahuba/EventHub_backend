@@ -4,7 +4,8 @@
   "description": "Servidor backend para la página del evento.",
   "main": "index.js",
   "scripts": {
-    "start": "node index.js"
+    "start": "node index.js",
+    "dev": "NODE_OPTIONS=--openssl-legacy-provider node index.js"
   },
   "dependencies": {
     "@google/generative-ai": "^0.24.1",
