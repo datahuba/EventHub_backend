@@ -638,29 +638,32 @@ app.get('/api/generador', async (req, res) => {
     res.write('<pre style="font-family:monospace;padding:20px">');
     res.write(`Iniciando generacion de ${entries.length} entradas...\n\n`);
 
-    // Obtener todas las filas del sheet una sola vez
+    // Obtener columnas A:J para tener el ID (A) y el valor P (J)
     const sheetRows = await sheets.spreadsheets.values.get({
         spreadsheetId: GOOGLE_SHEET_ID,
-        range: 'Respuestas!A:A',
+        range: 'Respuestas!A:J',
     });
-    const colA = (sheetRows.data.values || []).map(r => r[0]);
+    const allRows = sheetRows.data.values || [];
 
     let ok = 0, err = 0;
     for (let i = 0; i < entries.length; i++) {
         const entry = entries[i];
         res.write(`[${i + 1}/${entries.length}] ${entry.id} ... `);
         try {
+            const matchingRow = allRows.find(r => r[0] === entry.id);
+            const datos_qr = matchingRow ? matchingRow[9] : entry.id; // columna J = valor P
+
             const templatePath = getEventTemplatePath(entry.event_id);
             const imageUrl = await generateEntryImage({
                 id_entrada: entry.id,
                 nombre: entry.id,
                 monto_pagado: entry.monto,
                 metodo_pago: entry.metodo,
-                datos_qr: entry.id,
+                datos_qr,
             }, templatePath);
 
             // Buscar la fila en Sheets y actualizar columna U
-            const rowIdx = colA.indexOf(entry.id);
+            const rowIdx = allRows.findIndex(r => r[0] === entry.id);
             if (rowIdx !== -1) {
                 const rowNumber = rowIdx + 1;
                 await sheets.spreadsheets.values.update({
